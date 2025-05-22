@@ -83,31 +83,6 @@
   )
 )
 
-;; Add asset ID to principal's asset list
-(define-private (add-asset-to-principal (asset-id uint) (owner principal))
-  (let ((current-assets 
-          (default-to { asset-ids: (list) } 
-            (map-get? principal-assets { owner: owner }))))
-    (map-set principal-assets
-      { owner: owner }
-      { asset-ids: (append (get asset-ids current-assets) asset-id) }
-    )
-  )
-)
-
-;; Remove asset ID from principal's asset list
-(define-private (remove-asset-from-principal (asset-id uint) (owner principal))
-  (let ((current-assets 
-          (default-to { asset-ids: (list) } 
-            (map-get? principal-assets { owner: owner }))))
-    (map-set principal-assets
-      { owner: owner }
-      { asset-ids: (filter (lambda (id) (not (is-eq id asset-id))) 
-                          (get asset-ids current-assets)) }
-    )
-  )
-)
-
 ;; Add a history entry for an asset transfer
 (define-private (add-history-entry (asset-id uint) (previous-owner principal) (new-owner principal) (notes (optional (string-ascii 256))))
   (let ((counter (default-to { count: u0 } (map-get? asset-history-counter { asset-id: asset-id })))
@@ -179,54 +154,6 @@
 
 ;; Public functions
 
-;; Register a new asset
-(define-public (register-asset 
-                (description (string-ascii 256))
-                (value uint)
-                (date-acquired uint)
-                (condition (string-ascii 64))
-                (metadata-uri (optional (string-utf8 256))))
-  (let ((asset-id (generate-asset-id))
-        (owner tx-sender))
-    
-    ;; Validate inputs
-    (asserts! (> (len description) u0) ERR-INVALID-DETAILS)
-    (asserts! (> value u0) ERR-INVALID-DETAILS)
-    
-    ;; Create the asset
-    (map-set assets
-      { asset-id: asset-id }
-      {
-        owner: owner,
-        description: description,
-        value: value,
-        date-acquired: date-acquired,
-        condition: condition,
-        metadata-uri: metadata-uri,
-        is-active: true
-      }
-    )
-    
-    ;; Initialize history counter
-    (map-set asset-history-counter
-      { asset-id: asset-id }
-      { count: u0 }
-    )
-    
-    ;; Initialize attestation counter
-    (map-set asset-attestation-counter
-      { asset-id: asset-id }
-      { count: u0 }
-    )
-    
-    ;; Add asset to owner's list
-    (add-asset-to-principal asset-id owner)
-    
-    ;; Return success with new asset ID
-    (ok asset-id)
-  )
-)
-
 ;; Update asset details (only owner can update)
 (define-public (update-asset
                 (asset-id uint)
@@ -259,43 +186,6 @@
     )
     
     (ok true)
-  )
-)
-
-;; Transfer asset ownership
-(define-public (transfer-asset
-                (asset-id uint)
-                (new-owner principal)
-                (notes (optional (string-ascii 256))))
-  (let ((asset (map-get? assets { asset-id: asset-id })))
-    ;; Check asset exists
-    (asserts! (is-some asset) ERR-ASSET-NOT-FOUND)
-    
-    ;; Check ownership
-    (asserts! (is-owner asset-id tx-sender) ERR-UNAUTHORIZED-TRANSFER)
-    
-    ;; Validate new owner
-    (asserts! (not (is-eq tx-sender new-owner)) ERR-INVALID-RECEIVER)
-    
-    ;; Get previous owner
-    (let ((unwrapped-asset (unwrap-panic asset))
-          (previous-owner (get owner unwrapped-asset)))
-      
-      ;; Update asset ownership
-      (map-set assets
-        { asset-id: asset-id }
-        (merge unwrapped-asset { owner: new-owner })
-      )
-      
-      ;; Add history entry
-      (add-history-entry asset-id previous-owner new-owner notes)
-      
-      ;; Update principal-assets maps
-      (remove-asset-from-principal asset-id previous-owner)
-      (add-asset-to-principal asset-id new-owner)
-      
-      (ok true)
-    )
   )
 )
 
